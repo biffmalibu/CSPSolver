@@ -41,4 +41,19 @@ public class AllDiffConstraint<DomainType> extends Constraint<DomainType> {
         }
         return true;
     }
+
+    public ArrayList<Integer> getVariableIndices() {
+        HashMap<String, Integer> variableIndexLookup = new HashMap<>();
+        ArrayList<Integer> indices = new ArrayList<Integer>();
+        for(String variable : variables){
+            indices.add(variableIndexLookup.get(variable));
+        }
+        return indices;
+    }
+    
+
+    public boolean getInvolvesVariable(int variableIndex) {
+        return getVariableIndices().contains(variableIndex);
+    }
+
 }

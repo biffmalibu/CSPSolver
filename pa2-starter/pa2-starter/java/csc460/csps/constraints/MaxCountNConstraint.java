@@ -48,4 +48,7 @@ public class MaxCountNConstraint<DomainType> extends Constraint<DomainType> {
         }
         return true;
     }
+    public int getMaxCount(){
+        return n;
+    }
 }

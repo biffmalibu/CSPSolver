@@ -96,7 +96,7 @@ The supported Java drivers are below:
   * `java -cp bin csc460.drivers.SearchDriver` -- For path-finding search problems.
   * `java -cp bin csc460.drivers.CSPDriver` -- For constraint satisfaction problems.
     For example:
-        `java -cp bin csv460.drivers.CSPDriver generic ../csps/sudoku1.txt` 
+        `java -cp bin csc460.drivers.CSPDriver generic ../csps/sudoku1.txt` 
     will solve the Sudoku puzzle described as a generic CSP in ../csps/sudoku1.txt 
 
 

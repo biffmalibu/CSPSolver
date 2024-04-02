@@ -1,6 +1,7 @@
 package csc460.csps;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import csc460.csps.constraints.*;
 import csc460.SearchState;
@@ -12,7 +13,15 @@ import csc460.BoardCoordinate;
  * values in the domain, e.g., for Sudoku, you might use Integer for this, while for a sheduling
  * problem, you would probably use a String representing the name of the entity being scheduled. 
  * 
+ * This class was modified to include the use of forward checking, least constraining value, and minimum remaining values. 
+ * The methods getSuccessors, selectNextVariableIndex, orderValues, and forwardCheck were modified to include these features. 
+ * 
+ * Generative AI: Some methods in this class were modified with the use of generative AI. A section in the orderValues method
+ * was produced by ChatGPT to help me correctly sort the orderedValues list. forwardCheck was in large part produced by
+ * Github Copilot, and further modifications were made by me to ensure that the method was correctly implemented.
+ * 
  * @author Hank Feild
+ * @author Bradford Torpey
  */
 public abstract class CSP<DomainType> implements SearchProblem {
     protected SearchState startState;
@@ -197,14 +206,21 @@ public abstract class CSP<DomainType> implements SearchProblem {
             CSPState successorState = currentState.clone();
             successorState.getAssignments().set(variableIndex, value);
             if(constraintsSatisfied(successorState.getAssignments())){
-
-                if(useForwardChecking){
-                    successorState = forwardCheck(successorState, variableIndex, value);
-                    // Skip this successor if any domain is empty.
-                    // TODO: implement this check.
+                if(useForwardChecking){ // Forward checking
+                    successorState = forwardCheck(successorState, variableIndex, value); // Update successor state with forward checking
+                    boolean hasEmptyDomain = false; 
+                    for(DomainType domainValue : successorState.getDomains().get(variableIndex)){ // Check if any domain is empty
+                        if(domainValue == null){ // If domain is empty, break and continue to next successor
+                            hasEmptyDomain = true;
+                            break;
+                        }
+                    }
+                    if(hasEmptyDomain){ // If domain is empty, continue to next successor
+                        continue;
+                    }
                 }
 
-                successors.add(successorState);
+                successors.add(successorState); // Add successor to list of successors
             }
         }
         return successors;
@@ -220,11 +236,20 @@ public abstract class CSP<DomainType> implements SearchProblem {
      * @return The index of the next variable to assign a value to.
      */
     public int selectNextVariableIndex(CSPState state){
-        if(useMinimumRemainingValues){
-            // TODO: implement minimum remaining values ordering; return the variable with the fewest remaining values in its domain.
-            return state.getAssignments().indexOf(null); // Replace this line!
+        if (useMinimumRemainingValues) { // Minimum remaining values
+            int minRemainingValues = Integer.MAX_VALUE; // Initialize minRemainingValues to maximum value (2^31 - 1)
+            int minRemainingValuesIndex = -1; // Initialize minRemainingValuesIndex to -1
+            ArrayList<ArrayList<DomainType>> domains = state.getDomains(); // Get the domains from state
+            for (int i = 0; i < domains.size(); i++) { // For each domain
+                ArrayList<DomainType> domain = domains.get(i);
+                if (state.getAssignments().get(i) == null && domain.size() < minRemainingValues) { // If the variable is unassigned and the domain size is less than minRemainingValues
+                    minRemainingValues = domain.size(); // Update minRemainingValues
+                    minRemainingValuesIndex = i; 
+                }
+            }
+            return minRemainingValuesIndex; // Return the index of the variable with the minimum remaining values
         }
-        return state.getAssignments().indexOf(null);
+        return state.getAssignments().indexOf(null); 
     }
 
     /**
@@ -238,16 +263,35 @@ public abstract class CSP<DomainType> implements SearchProblem {
      * @return An ordered list of the values in the domain of the variable at the given index.
      */
     public ArrayList<DomainType> orderValues(CSPState state, int variableIndex){
-        if(useLeastConstrainingValue){
-            // TODO: implement least constraining value ordering; return the values in the domain of
-            // the given variable, ordered by how many values they remove from the remaining variables' domains.
-            // You will find the forwardCheck() method helpful here.
-            return state.getDomains().get(variableIndex); // Replace this line!
-
+        if(useLeastConstrainingValue){ // Least constraining value
+            ArrayList<DomainType> domain = state.getDomains().get(variableIndex); // Get the domain of the variable at the given index
+            ArrayList<Integer> removalCounts = new ArrayList<>(); // Initialize removalCounts to store # of values eliminated from domains of other unassigned variables
+            for (DomainType value : domain) { // For each value in the domain
+                int count = 0; // Reset count to 0
+                for (int i = 0; i < state.getDomains().size(); i++) { 
+                    if (i != variableIndex) { // If the index is not the variable index
+                        CSPState newState = forwardCheck(state, variableIndex, value); // Get the new state with the value assigned to the variable at the given index
+                        if (newState.getDomains().get(i).size() < state.getDomains().get(i).size()) { // If the domain size is less than the original domain size
+                            count++; // Increment count
+                        }
+                    }
+                }
+                removalCounts.add(count); // Add count to removalCounts
+            }
+            // This section of code below was in part produced by ChatGPT to help me correctly sort the orderedValues list 
+            // I had initially been unsure of how to use Collections.sort() and ChatGPT was able to help me understand how to use it correctly
+            ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+            ArrayList<DomainType> orderedValues = new ArrayList<>(domain); // Initialize orderedValues to a copy of the domain
+            orderedValues.sort((v1, v2) -> { // Sort orderedValues by the # of values eliminated from domains of other unassigned variables
+                int index1 = domain.indexOf(v1); 
+                int index2 = domain.indexOf(v2);
+                return Integer.compare(removalCounts.get(index1), removalCounts.get(index2)); // Compare the # of values eliminated from the domains of other unassigned variables
+            });
+            return orderedValues; // Return orderedValues
+            ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         }
         return state.getDomains().get(variableIndex);
-    }
-
+    } 
     /**
      * Returns a new state with the given variable assigned the given value, and the domains of the other variables updated.
      *
@@ -258,25 +302,65 @@ public abstract class CSP<DomainType> implements SearchProblem {
      * @return A new state with the given variable assigned the given value, and the domains of the other variables updated to
      *        be consistent with the new assignment.
      */
-    public CSPState forwardCheck(CSPState state, int variableIndex, DomainType value){
+    public CSPState forwardCheck(CSPState state, int variableIndex, DomainType value) {
         // Deep copy.
         CSPState newState = state.clone();
         newState.getAssignments().set(variableIndex, value);
 
-        // Convienience references so we don't have to write:
-        // newState.getAssignments().get(i) and newState.getDomains().get(i)
-        // over and over...
+        // Convenience references
         ArrayList<DomainType> assignments = newState.getAssignments();
         ArrayList<ArrayList<DomainType>> domains = newState.getDomains();
 
-        // TODO: check each of the constraints, skipping those that don't involve
-        // the variable being assigned. Handle each constraint type separately
-        // (AllDiff, AllSame, MaxCount). For example, if the constraint is
-        // AllDiff, remove the value assigned to the new variable from the
-        // domains of the unassigned variables involved in the constraint.
+        // This section of code below was produced by Github Copilot, and further modifications were made by me to ensure that the method was correctly implemented
+        // I was unsure of how to correctly implement forward checking on some of the constraint types, and Github Copilot was able to help me understand how to implement it
+        ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        for (Constraint constraint : constraints) { // Iterate through constraints
+            ArrayList<Integer> variableIndices = new ArrayList<>(); // Initialize variableIndices 
+            for (Object variable : constraint.variables) { // For each variable in the constraint
+                String variableString = (String) variable;
+                Integer index = variableIndexLookup.get(variableString); // Get the index of the variable
+                if (index != null) { // If the index is not null
+                    variableIndices.add(index); // Add the index to variableIndices
+                }
+            }
 
+            if (variableIndices.contains(variableIndex)) { // If variableIndices contains the variable index
+                if (constraint instanceof AllDiffConstraint) { // AllDiffConstraint
+                    for (int index : variableIndices) { // For each index in variableIndices
+                        if (index != variableIndex) { // If the index is not the variable index
+                            ArrayList<DomainType> domain = domains.get(index); 
+                            domain.remove(value); // Remove the value from the domain
+                        }
+                    }
+                } else if (constraint instanceof AllSameConstraint) { // AllSameConstraint
+                    for (int index : variableIndices) { // For each index in variableIndices
+                        if (index != variableIndex) { // If the index is not the variable index
+                            ArrayList<DomainType> domain = domains.get(index);
+                            domain.retainAll(Collections.singletonList(value)); // Retain only the value in the domain
+                        }
+                    }
+                } else if (constraint instanceof MaxCountNConstraint) { // MaxCountNConstraint
+                    MaxCountNConstraint maxCountConstraint = (MaxCountNConstraint) constraint; // Cast constraint to MaxCountNConstraint
+                    int maxCount = maxCountConstraint.getMaxCount(); // Get the max count
+                    int count = 0; // Initialize count to 0
+                    for (int index : variableIndices) { // For each index in variableIndices
+                        if (index != variableIndex) { // If the index is not the variable index
+                            ArrayList<DomainType> domain = domains.get(index);
+                            if (domain.contains(value)) { // If the domain contains the value
+                                count++;
+                                if (count > maxCount) { // If the count is greater than the max count
+                                    domain.remove(value); // Remove the value from the domain
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         return newState;
     }
+
 
     /**
      * 

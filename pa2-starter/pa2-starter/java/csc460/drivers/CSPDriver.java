@@ -82,10 +82,10 @@ public class CSPDriver {
             "Options:\n"+
             "    -fc: Use forward checking.\n"+
             "    -mrv: Use the minimum remaining values to pick variables.\n"+
-            "    -lcv: Use the least constraining value to pick values.";
+            "    -lcv: Use the least constraining value to pick values.\n";
 
         if (args.length < 2) {
-            System.err.print(usage);
+            System.err.println(usage);
             return;
         }
 
